@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { api } from '../services/api'
-import { Users, FileText, Send, CheckCircle, BarChart3, Clock, Trophy, Inbox, Folder, Search, AlertTriangle, Paperclip, Image as ImageIcon, File as FileIcon, Trash2, MessageSquare, Plus, Calendar, Link as LinkIcon, Maximize2, Hourglass, AlertCircle, Briefcase, Info } from 'lucide-react'
+import { Users, FileText, Send, CheckCircle, BarChart3, Clock, Trophy, Inbox, Folder, Search, AlertTriangle, Paperclip, Image as ImageIcon, File as FileIcon, Trash2, MessageSquare, Plus, Calendar, Link as LinkIcon, Maximize2, Hourglass, AlertCircle, Briefcase, Info, ClipboardCheck, XCircle } from 'lucide-react'
 
 const checkIsLate = (deadline, status) => {
   if (!deadline || status !== 'A Fazer') return false;
@@ -12,16 +12,19 @@ const checkIsLate = (deadline, status) => {
 
 export default function Dashboard({ user, setActiveTab }) {
   const [tasks, setTasks] = useState([])
+  const [createdTasks, setCreatedTasks] = useState([])
   const [templates, setTemplates] = useState({})
   const [clientsMap, setClientsMap] = useState({}) // NOVO ESTADO: Mapa de Clientes
+  const [usersMap, setUsersMap] = useState({})
   const [taskAnswers, setTaskAnswers] = useState({})
   const [msg, setMsg] = useState('')
 
-  const [folders, setFolders] = useState(['Entrada', 'Atrasado', 'Aguardando Aprovação', 'Concluídas'])
+  const [folders, setFolders] = useState(['Entrada', 'Atrasado', 'Aguardando Conferência', 'Aguardando OK Final', 'Aguardando Aprovação', 'Concluídas'])
   const [activeFolder, setActiveFolder] = useState('Entrada')
   const [newFolderName, setNewFolderName] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [chatInputs, setChatInputs] = useState({})
+  const [finalFeedbacks, setFinalFeedbacks] = useState({})
 
   useEffect(() => { 
     if (user.role === 'employee') {
@@ -33,15 +36,20 @@ export default function Dashboard({ user, setActiveTab }) {
 
   const fetchEmployeeData = async () => {
     try {
-      const [tasksRes, templatesRes, clientsRes] = await Promise.all([
+      const [tasksRes, templatesRes, clientsRes, createdRes, usersRes] = await Promise.all([
         api.get(`/tasks/${user.id}`), 
         api.get('/templates/'),
-        api.get('/all-clients/') // CARREGA OS NOMES DOS CLIENTES
+        api.get('/all-clients/'),
+        api.get(`/tasks-created/${user.id}`),
+        api.get('/users/')
       ])
       
       const tempMap = {}; templatesRes.data.forEach(t => tempMap[t.id] = t); setTemplates(tempMap)
       
       const cMap = {}; clientsRes.data.forEach(c => cMap[c.id] = c.company_name); setClientsMap(cMap) // MONTA O MAPA
+
+      const uMap = {}; usersRes.data.forEach(u => uMap[u.id] = u); setUsersMap(uMap)
+      setCreatedTasks(createdRes.data)
       
       let updatedTasks = [...tasksRes.data];
       let needsDbUpdate = [];
@@ -67,8 +75,8 @@ export default function Dashboard({ user, setActiveTab }) {
       const foundFolders = new Set(['Entrada']) 
       updatedTasks.forEach(task => { if(task.folder) foundFolders.add(task.folder) })
       
-      foundFolders.delete('Entrada'); foundFolders.delete('Concluídas'); foundFolders.delete('Aguardando Aprovação'); foundFolders.delete('Atrasado')
-      setFolders(['Entrada', ...Array.from(foundFolders), 'Atrasado', 'Aguardando Aprovação', 'Concluídas'])
+      foundFolders.delete('Entrada'); foundFolders.delete('Concluídas'); foundFolders.delete('Aguardando Aprovação'); foundFolders.delete('Aguardando Conferência'); foundFolders.delete('Aguardando OK Final'); foundFolders.delete('Atrasado')
+      setFolders(['Entrada', ...Array.from(foundFolders), 'Atrasado', 'Aguardando Conferência', 'Aguardando OK Final', 'Aguardando Aprovação', 'Concluídas'])
 
       needsDbUpdate.forEach(t => {
         api.put(`/tasks/${t.id}`, { dynamic_data: t.dynamic_data || {}, status: t.status, folder: 'Atrasado', admin_feedback: t.admin_feedback || '' });
@@ -99,15 +107,18 @@ export default function Dashboard({ user, setActiveTab }) {
   const handleSubmitTask = async (taskId, e) => {
     e.preventDefault(); setMsg('')
     try {
+      const task = tasks.find(t => t.id === taskId)
       await api.put(`/tasks/${taskId}`, { 
         dynamic_data: taskAnswers[taskId], 
-        status: 'Aguardando Aprovação', 
-        folder: 'Aguardando Aprovação',
-        admin_feedback: '' 
+        status: task?.status || 'A Fazer', 
+        folder: task?.folder || 'Entrada',
+        admin_feedback: '',
+        actor_id: user.id,
+        actor_name: user.name
       })
-      await api.post(`/users/1/notifications`, { text: `Tarefa enviada para revisão por ${user.name}` })
+      await api.post(`/tasks/${taskId}/send-to-reviewer`, { actor_id: user.id, actor_name: user.name })
       
-      setMsg('Tarefa enviada para a gestão aprovar!')
+      setMsg(task?.reviewer_id ? 'Tarefa enviada para conferência!' : 'Tarefa enviada para aprovação!')
       fetchEmployeeData()
       setTimeout(() => setMsg(''), 4000)
     } catch (error) { setMsg('Erro ao enviar tarefa.') }
@@ -116,12 +127,12 @@ export default function Dashboard({ user, setActiveTab }) {
   const handleCreateFolder = (e) => {
     e.preventDefault()
     const name = newFolderName.trim()
-    const reservedNames = ['entrada', 'concluídas', 'aguardando aprovação', 'atrasado']
+    const reservedNames = ['entrada', 'concluídas', 'aguardando aprovação', 'aguardando conferência', 'aguardando ok final', 'atrasado']
     
     if(name && !reservedNames.includes(name.toLowerCase()) && !folders.includes(name)) {
       setFolders(prev => {
         const custom = prev.filter(f => !['Entrada', 'Concluídas', 'Aguardando Aprovação', 'Atrasado'].includes(f))
-        return ['Entrada', ...custom, name, 'Atrasado', 'Aguardando Aprovação', 'Concluídas']
+        return ['Entrada', ...custom, name, 'Atrasado', 'Aguardando Conferência', 'Aguardando OK Final', 'Aguardando Aprovação', 'Concluídas']
       })
       setNewFolderName('')
     }
@@ -150,6 +161,27 @@ export default function Dashboard({ user, setActiveTab }) {
     } catch (error) { console.error("Erro no chat") }
   }
 
+  const handleFinalApprove = async (taskId) => {
+    try {
+      await api.post(`/tasks/${taskId}/final-approve`, { actor_id: user.id, actor_name: user.name })
+      setMsg('OK final registrado. Tarefa concluída!')
+      fetchEmployeeData()
+      setTimeout(() => setMsg(''), 4000)
+    } catch (error) { setMsg('Erro ao aprovar tarefa.') }
+  }
+
+  const handleFinalReject = async (taskId) => {
+    const feedback = finalFeedbacks[taskId]?.trim()
+    if (!feedback) return setMsg('Erro: informe o motivo antes de devolver a tarefa.')
+    try {
+      await api.post(`/tasks/${taskId}/final-reject`, { actor_id: user.id, actor_name: user.name, feedback })
+      setMsg('Tarefa devolvida ao parceiro executor.')
+      setFinalFeedbacks({ ...finalFeedbacks, [taskId]: '' })
+      fetchEmployeeData()
+      setTimeout(() => setMsg(''), 4000)
+    } catch (error) { setMsg('Erro ao devolver tarefa.') }
+  }
+
   const isImage = (url) => typeof url === 'string' && url.match(/\.(jpeg|jpg|gif|png)$/i) != null
   const cleanPriority = (p) => p ? p.replace(/[^\w\s]/gi, '').trim() : 'Normal'
   const getPriorityColor = (p) => {
@@ -162,7 +194,7 @@ export default function Dashboard({ user, setActiveTab }) {
   if (user.role === 'employee') {
     const pendingCount = tasks.filter(t => t.status === 'A Fazer' && t.folder !== 'Atrasado').length
     const lateCount = tasks.filter(t => t.folder === 'Atrasado').length
-    const reviewCount = tasks.filter(t => t.status === 'Aguardando Aprovação').length
+    const reviewCount = tasks.filter(t => ['Aguardando Aprovação', 'Aguardando Conferência', 'Aguardando OK Final'].includes(t.status)).length
     const doneCount = tasks.filter(t => t.status === 'Aprovada').length
     
     const filteredTasks = tasks.filter(t => {
@@ -174,6 +206,8 @@ export default function Dashboard({ user, setActiveTab }) {
       return isInFolder && (templateName.includes(search) || clientName.includes(search))
     })
 
+    const finalApprovalTasks = createdTasks.filter(t => t.status === 'Aguardando OK Final')
+
     return (
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
         <div className="space-y-6">
@@ -182,6 +216,7 @@ export default function Dashboard({ user, setActiveTab }) {
               <h3 className="text-3xl font-bold tracking-tight text-slate-800">Meu Workspace</h3>
               <p className="text-slate-500 mt-1 text-lg">Organize suas entregas em pastas.</p>
             </div>
+            <button onClick={() => setActiveTab('assign')} className="bg-slate-800 hover:bg-slate-900 text-white font-bold px-4 py-2 rounded-xl transition-colors flex items-center gap-2 shadow-sm"><Send size={16} /> Criar tarefa para parceiro</button>
             <div className="relative w-full md:w-72">
               <span className="absolute left-3 top-2.5 text-slate-400"><Search size={18} /></span>
               <input type="text" placeholder="Buscar tarefa ou cliente..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-600 bg-white" />
@@ -220,7 +255,7 @@ export default function Dashboard({ user, setActiveTab }) {
                   activeClass = 'bg-red-600 text-white shadow-md'
                   inactiveClass = 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200'
                 }
-                if (folder === 'Aguardando Aprovação') {
+                if (folder === 'Aguardando Conferência' || folder === 'Aguardando OK Final' || folder === 'Aguardando Aprovação') {
                   icon = <Hourglass size={16} />
                   activeClass = 'bg-amber-500 text-white shadow-md'
                   inactiveClass = 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200'
@@ -368,7 +403,7 @@ export default function Dashboard({ user, setActiveTab }) {
                             </div>
                           )
                         })}
-                        {isPending && <button type="submit" className={`w-full mt-4 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors ${isLateTask ? 'bg-red-600 hover:bg-red-700' : 'bg-slate-800 hover:bg-slate-900'}`}><Send size={16} /> Enviar para Revisão {isLateTask && '(Em Atraso)'}</button>}
+                        {isPending && <button type="submit" className={`w-full mt-4 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors ${isLateTask ? 'bg-red-600 hover:bg-red-700' : 'bg-slate-800 hover:bg-slate-900'}`}><Send size={16} /> Enviar para Conferência {isLateTask && '(Em Atraso)'}</button>}
                       </form>
 
                       <div className="mt-6 pt-4 border-t border-slate-100">
@@ -395,7 +430,7 @@ export default function Dashboard({ user, setActiveTab }) {
                       <div className="bg-slate-50 border-t border-slate-100 p-3 flex justify-between items-center">
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1"><Folder size={12} /> Mover para</span>
                         <select value={task.folder || 'Entrada'} onChange={(e) => handleMoveTask(task.id, e.target.value)} className="text-xs font-bold bg-white border border-slate-200 rounded-md px-2 py-1 outline-none focus:ring-2 focus:ring-slate-800 text-slate-600 cursor-pointer">
-                          {folders.filter(f => !['Concluídas', 'Aguardando Aprovação', 'Atrasado'].includes(f)).map(f => <option key={f} value={f}>{f}</option>)}
+                          {folders.filter(f => !['Concluídas', 'Aguardando Aprovação', 'Aguardando Conferência', 'Aguardando OK Final', 'Atrasado'].includes(f)).map(f => <option key={f} value={f}>{f}</option>)}
                         </select>
                       </div>
                     )}
@@ -408,6 +443,71 @@ export default function Dashboard({ user, setActiveTab }) {
                   </div>
                 )
               })}
+            </div>
+          )}
+
+
+          {finalApprovalTasks.length > 0 && (
+            <div className="mt-12 pt-8 border-t border-slate-200">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="bg-emerald-100 text-emerald-700 p-3 rounded-xl shadow-sm">
+                  <ClipboardCheck size={24} />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-bold text-slate-800 tracking-tight">Aguardando seu OK final</h3>
+                  <p className="text-slate-500 text-sm mt-0.5">Tarefas que você solicitou, foram executadas e já passaram pelo conferente.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {finalApprovalTasks.map(task => {
+                  const template = templates[task.template_id]
+                  const executor = usersMap[task.assigned_to]
+                  const reviewer = usersMap[task.reviewer_id]
+                  if (!template) return null
+
+                  return (
+                    <div key={task.id} className="bg-white border border-emerald-200 rounded-2xl shadow-sm overflow-hidden">
+                      <div className="bg-emerald-50 p-5 border-b border-emerald-100">
+                        <h4 className="text-xl font-bold text-slate-800 leading-tight">{template.name}</h4>
+                        <div className="flex flex-wrap gap-2 mt-3">
+                          {executor && <span className="text-[10px] font-bold uppercase tracking-wider bg-white border border-slate-200 text-slate-600 px-2.5 py-1 rounded">Executor: {executor.name}</span>}
+                          {reviewer && <span className="text-[10px] font-bold uppercase tracking-wider bg-white border border-emerald-200 text-emerald-700 px-2.5 py-1 rounded">Conferente: {reviewer.name}</span>}
+                          {task.client_id && clientsMap[task.client_id] && <span className="text-[10px] font-bold uppercase tracking-wider bg-white border border-pink-200 text-pink-700 px-2.5 py-1 rounded">Cliente: {clientsMap[task.client_id]}</span>}
+                        </div>
+                      </div>
+
+                      <div className="p-5 space-y-4">
+                        {Object.entries(task.dynamic_data || {}).map(([key, val]) => (
+                          <div key={key} className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                            <span className="block text-[10px] font-bold text-slate-400 mb-1.5 uppercase tracking-wider">{key}</span>
+                            {typeof val === 'boolean' ? (
+                              <span className={`text-xs font-bold px-2 py-1 rounded flex w-fit items-center gap-1 ${val ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>{val ? 'Confirmado' : 'Não Confirmado'}</span>
+                            ) : (val?.startsWith?.('http') ? (
+                              isImage(val) ? <img src={val} alt="Anexo" className="w-full max-h-40 object-cover rounded-lg border border-slate-200" /> : <a href={val} target="_blank" rel="noreferrer" className="text-blue-600 text-sm font-bold hover:underline">Abrir anexo</a>
+                            ) : (
+                              <span className="text-slate-800 text-sm font-medium whitespace-pre-wrap block">{val || 'Não preenchido'}</span>
+                            ))}
+                          </div>
+                        ))}
+
+                        <textarea
+                          placeholder="Motivo da devolução, caso não aprove..."
+                          value={finalFeedbacks[task.id] || ''}
+                          onChange={e => setFinalFeedbacks({ ...finalFeedbacks, [task.id]: e.target.value })}
+                          rows="2"
+                          className="w-full px-3 py-2.5 rounded-lg border border-slate-200 focus:border-red-400 focus:ring-1 focus:ring-red-400 outline-none text-sm resize-none"
+                        />
+
+                        <div className="flex gap-3">
+                          <button onClick={() => handleFinalApprove(task.id)} className="flex-1 bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 rounded-xl transition-all shadow-md flex justify-center items-center gap-2"><CheckCircle size={18} /> Dar OK Final</button>
+                          <button onClick={() => handleFinalReject(task.id)} className="flex-1 bg-white hover:bg-red-50 text-red-600 font-bold py-3 rounded-xl transition-all border border-red-200 flex justify-center items-center gap-2"><XCircle size={18} /> Devolver</button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           )}
 

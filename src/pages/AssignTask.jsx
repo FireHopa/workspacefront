@@ -1,19 +1,21 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { api } from '../services/api'
-import { Send, User, Users, Calendar, AlertTriangle, Paperclip, Link as LinkIcon, Trash2, Loader2, Info, Briefcase } from 'lucide-react'
+import { Send, User, Users, Calendar, AlertTriangle, Paperclip, Link as LinkIcon, Trash2, Loader2, Info, Briefcase, ClipboardCheck } from 'lucide-react'
 
-export default function AssignTask({ setActiveTab }) {
+export default function AssignTask({ setActiveTab, user }) {
   const [employees, setEmployees] = useState([])
+  const [reviewers, setReviewers] = useState([])
   const [templates, setTemplates] = useState([])
   const [teamRoles, setTeamRoles] = useState([])
-  const [clients, setClients] = useState([]) // NOVO ESTADO: Clientes
+  const [clients, setClients] = useState([])
   
   const [assignMode, setAssignMode] = useState('individual') 
   const [selectedTemplate, setSelectedTemplate] = useState('')
-  const [selectedClient, setSelectedClient] = useState('') // NOVO ESTADO
+  const [selectedClient, setSelectedClient] = useState('')
   const [selectedEmployee, setSelectedEmployee] = useState('')
   const [selectedRole, setSelectedRole] = useState('')
+  const [selectedReviewer, setSelectedReviewer] = useState('')
   const [priority, setPriority] = useState('Normal')
   const [deadline, setDeadline] = useState('')
   const [adminNotes, setAdminNotes] = useState('')
@@ -31,17 +33,24 @@ export default function AssignTask({ setActiveTab }) {
         api.get('/users/'), 
         api.get('/templates/'), 
         api.get('/team-roles/'),
-        api.get('/all-clients/') // BUSCA A LISTA GERAL DE CLIENTES
+        api.get('/all-clients/')
       ])
-      setEmployees(usersRes.data.filter(u => u.role === 'employee'))
+
+      const partnerList = usersRes.data.filter(u => u.role === 'employee' && u.id !== user.id)
+      const reviewerList = usersRes.data.filter(u => u.role === 'conferente')
+
+      setEmployees(partnerList)
+      setReviewers(reviewerList)
       setTemplates(templatesRes.data)
       setTeamRoles(rolesRes.data)
       setClients(clientsRes.data)
+
+      if (reviewerList.length === 1) setSelectedReviewer(String(reviewerList[0].id))
     } catch (error) { console.error(error) }
   }
 
   const handleAdminUpload = async (file) => {
-    if (!file) return;
+    if (!file) return
     setUploading(true)
     const formData = new FormData()
     formData.append('file', file)
@@ -49,7 +58,7 @@ export default function AssignTask({ setActiveTab }) {
       const res = await api.post('/upload/', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
       setAdminAttachments([...adminAttachments, res.data.url])
     } catch (err) {
-      alert("Erro ao subir arquivo.")
+      alert('Erro ao subir arquivo.')
     } finally {
       setUploading(false)
     }
@@ -66,12 +75,30 @@ export default function AssignTask({ setActiveTab }) {
     setAdminAttachments(adminAttachments.filter((_, index) => index !== indexToRemove))
   }
 
+  const resetForm = () => {
+    setSelectedEmployee('')
+    setSelectedRole('')
+    setDeadline('')
+    setPriority('Normal')
+    setAdminAttachments([])
+    setAdminNotes('')
+    setSelectedClient('')
+    if (reviewers.length !== 1) setSelectedReviewer('')
+  }
+
+  const notifyAssignees = async (targets, tplName) => {
+    targets.forEach(target => {
+      api.post(`/users/${target.id}/notifications`, { text: `Nova tarefa recebida: ${tplName}` })
+    })
+  }
+
   const handleAssignTask = async (e) => {
     e.preventDefault()
     setMsg('')
-    if (!selectedTemplate) return setMsg('Erro: Escolha um template.')
 
-    // Agora enviamos o client_id junto
+    if (!selectedTemplate) return setMsg('Erro: escolha um template.')
+    if (user.role !== 'admin' && !selectedReviewer) return setMsg('Erro: escolha um conferente para validar essa tarefa.')
+
     const taskData = { 
       template_id: parseInt(selectedTemplate), 
       dynamic_data: {}, 
@@ -79,37 +106,41 @@ export default function AssignTask({ setActiveTab }) {
       deadline,
       admin_attachments: adminAttachments,
       admin_notes: adminNotes,
-      client_id: selectedClient ? parseInt(selectedClient) : null // ENVIA O CLIENTE
+      client_id: selectedClient ? parseInt(selectedClient) : null,
+      created_by: user.id,
+      reviewer_id: selectedReviewer ? parseInt(selectedReviewer) : null
     }
     const tplName = templates.find(t => t.id === parseInt(selectedTemplate))?.name || 'Tarefa'
 
     try {
       if (assignMode === 'individual') {
-        if (!selectedEmployee) return setMsg('Erro: Escolha o Parceiro.')
+        if (!selectedEmployee) return setMsg('Erro: escolha o parceiro executor.')
         await api.post('/tasks/', { ...taskData, assigned_to: parseInt(selectedEmployee) })
-        await api.post(`/users/${selectedEmployee}/notifications`, { text: `Nova tarefa recebida: ${tplName}` })
-        setMsg('Tarefa delegada ao Parceiro com sucesso!')
+        await notifyAssignees([{ id: parseInt(selectedEmployee) }], tplName)
+        setMsg('Tarefa criada e enviada ao parceiro executor.')
       } else {
-        if (!selectedRole) return setMsg('Erro: Escolha a função.')
+        if (!selectedRole) return setMsg('Erro: escolha a função/setor.')
         const response = await api.post('/tasks/bulk/', { ...taskData, target_team_role: selectedRole })
-        employees.filter(emp => emp.team_role === selectedRole).forEach(emp => {
-          api.post(`/users/${emp.id}/notifications`, { text: `Nova tarefa para a equipe: ${tplName}` })
-        })
+        const targets = employees.filter(emp => emp.team_role === selectedRole)
+        await notifyAssignees(targets, tplName)
         setMsg(`${response.data.message}`)
       }
       
-      setSelectedEmployee(''); setSelectedRole(''); setDeadline(''); setPriority('Normal'); setAdminAttachments([]); setAdminNotes(''); setSelectedClient('');
+      resetForm()
       setTimeout(() => setMsg(''), 4000)
     } catch (err) { setMsg('Falha ao delegar a tarefa.') }
   }
 
-  const isImage = (url) => typeof url === 'string' && url.match(/\.(jpeg|jpg|gif|png)$/i) != null
+  const isImage = (url) => typeof url === 'string' && url.match(/\.(jpeg|jpg|gif|png|webp)$/i) != null
 
   return (
     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }} className="space-y-8">
       <div className="flex items-center gap-4">
         <button onClick={() => setActiveTab('dashboard')} className="px-3 py-2 text-sm font-bold bg-white rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors text-slate-600">Voltar</button>
-        <h3 className="text-3xl font-bold tracking-tight text-slate-800">Delegar Tarefa</h3>
+        <div>
+          <h3 className="text-3xl font-bold tracking-tight text-slate-800">Criar e Delegar Tarefa</h3>
+          <p className="text-slate-500 mt-1">Fluxo: solicitante cria, parceiro executa, conferente valida e solicitante dá o OK final.</p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -123,7 +154,6 @@ export default function AssignTask({ setActiveTab }) {
               </select>
             </div>
 
-            {/* NOVO CAMPO: SELECIONAR CLIENTE */}
             <div>
               <label className="flex items-center gap-2 text-sm font-bold text-slate-700 mb-2"><Briefcase size={16} className="text-pink-600"/> Cliente (Opcional)</label>
               <select value={selectedClient} onChange={e => setSelectedClient(e.target.value)} className="w-full px-4 py-3 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-slate-800 bg-slate-50 text-slate-800 cursor-pointer">
@@ -148,11 +178,11 @@ export default function AssignTask({ setActiveTab }) {
             </div>
 
             <div className="pt-4 border-t border-slate-100">
-              <label className="flex items-center gap-2 text-sm font-bold text-slate-700 mb-2"><Info size={16} className="text-indigo-500"/> Observações Importantes (Opcional)</label>
+              <label className="flex items-center gap-2 text-sm font-bold text-slate-700 mb-2"><Info size={16} className="text-indigo-500"/> Briefing / Observações</label>
               <textarea 
                 value={adminNotes} 
                 onChange={e => setAdminNotes(e.target.value)} 
-                placeholder="Ex: Focar na campanha de São Paulo, usar as cores da nova identidade visual..."
+                placeholder="Ex: objetivo da entrega, contexto, critérios de qualidade, links importantes..."
                 rows="3"
                 className="w-full px-4 py-3 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-slate-800 bg-slate-50 text-slate-700 text-sm resize-none" 
               />
@@ -182,6 +212,15 @@ export default function AssignTask({ setActiveTab }) {
               )}
             </div>
 
+            <div className="pt-4 border-t border-slate-100">
+              <label className="flex items-center gap-2 text-sm font-bold text-slate-700 mb-2"><ClipboardCheck size={16} className="text-emerald-600"/> Quem vai conferir?</label>
+              <select value={selectedReviewer} onChange={e => setSelectedReviewer(e.target.value)} className="w-full px-4 py-3 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-emerald-600 bg-slate-50 cursor-pointer text-sm font-semibold">
+                <option value="">{user.role === 'admin' ? 'Sem conferente: vai para aprovação da gestão' : 'Selecione o Conferente...'}</option>
+                {reviewers.map(reviewer => <option key={reviewer.id} value={reviewer.id}>{reviewer.name}</option>)}
+              </select>
+              {reviewers.length === 0 && <p className="mt-2 text-xs font-semibold text-red-600">Nenhum usuário com nível Conferente cadastrado ainda.</p>}
+            </div>
+
             <button form="assign-form" type="submit" className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-4 rounded-xl transition-all shadow-md flex justify-center items-center gap-2">
               <Send size={18} /> Enviar Tarefa
             </button>
@@ -192,7 +231,7 @@ export default function AssignTask({ setActiveTab }) {
         <div className="bg-slate-50 p-8 rounded-2xl shadow-inner border border-slate-200 h-fit">
           <div className="mb-6">
             <h4 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Paperclip size={18} className="text-blue-600"/> Briefing e Referências</h4>
-            <p className="text-slate-500 text-xs mt-1 font-medium">Envie links, vídeos ou imagens para guiar a equipe.</p>
+            <p className="text-slate-500 text-xs mt-1 font-medium">Envie links, vídeos ou imagens para guiar a execução.</p>
           </div>
 
           <div className="space-y-4">

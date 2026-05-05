@@ -1,7 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion' 
 import { api } from '../services/api'
-import { Bell, LogOut, LayoutGrid, Settings, X, Lock, CheckCircle2, AlertCircle, Target } from 'lucide-react'
+import { Bell, LogOut, Settings, X, Lock, CheckCircle2, AlertCircle, Target, Send, ClipboardCheck } from 'lucide-react'
+
+const getRoleLabel = (role) => {
+  if (role === 'admin') return 'Administrador'
+  if (role === 'conferente') return 'Conferente'
+  return 'Parceiro'
+}
 
 export default function Header({ user, handleLogout, setActiveTab }) {
   const [notifications, setNotifications] = useState([])
@@ -50,7 +56,7 @@ export default function Header({ user, handleLogout, setActiveTab }) {
         current_password: passwords.current,
         new_password: passwords.new
       })
-      setMsg('✅ Senha alterada com sucesso!')
+      setMsg('Senha alterada com sucesso!')
       setPasswords({ current: '', new: '', confirm: '' })
       setTimeout(() => {
         setShowSettings(false)
@@ -62,31 +68,42 @@ export default function Header({ user, handleLogout, setActiveTab }) {
   }
 
   const unreadCount = notifications.filter(n => !n.read).length
+  const canCreateTask = user.role === 'admin' || user.role === 'employee'
+  const canReview = user.role === 'conferente'
 
   return (
     <>
       <header className="bg-white shadow-sm border-b border-slate-200 sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
-          
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4 flex-wrap">
             <div className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setActiveTab('dashboard')}>
-  {/* Aqui entra a sua logo nova */}
-  <img 
-    src="/casadoads.png" 
-    alt="Logo Casa do Ads" 
-    className="h-12 w-auto object-contain" 
-  />
-  
-  {/* Se a sua logo já tiver o nome escrito nela, você pode apagar esta linha <h2> abaixo. Se for só o símbolo, pode manter! */}
-  <h2 className="text-xl font-extrabold tracking-tight text-slate-800">Casa do Ads</h2>
-</div>
+              <img src="/casadoads.png" alt="Logo Casa do Ads" className="h-12 w-auto object-contain" />
+              <h2 className="text-xl font-extrabold tracking-tight text-slate-800">Casa do Ads</h2>
+            </div>
             
-            {/* NOVO BOTÃO DE PRODUTIVIDADE */}
+            {canCreateTask && (
+              <button 
+                onClick={() => setActiveTab('assign')} 
+                className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-orange-50 hover:text-orange-700 rounded-lg transition-colors border border-slate-200 hover:border-orange-200"
+              >
+                <Send size={16} /> Criar Tarefa
+              </button>
+            )}
+
+            {canReview && (
+              <button 
+                onClick={() => setActiveTab('conference')} 
+                className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 rounded-lg transition-colors border border-slate-200 hover:border-emerald-200"
+              >
+                <ClipboardCheck size={16} /> Conferências
+              </button>
+            )}
+
             <button 
               onClick={() => setActiveTab('productivity')} 
               className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-colors border border-slate-200 hover:border-blue-200"
             >
-              <Target size={16} /> Meu Espaço (Produtividade)
+              <Target size={16} /> Meu Espaço
             </button>
           </div>
           
@@ -125,7 +142,7 @@ export default function Header({ user, handleLogout, setActiveTab }) {
 
             <div className="text-right border-l border-slate-200 pl-4 ml-2">
               <p className="text-sm font-bold text-slate-800">{user.name}</p>
-              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{user.role === 'admin' ? 'Administrador' : 'Parceiro'}</p>
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{getRoleLabel(user.role)}</p>
             </div>
             
             <button onClick={handleLogout} className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors ml-2">
@@ -138,7 +155,6 @@ export default function Header({ user, handleLogout, setActiveTab }) {
       {showSettings && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl shadow-2xl border border-slate-100 w-full max-w-md overflow-hidden">
-            
             <div className="bg-slate-50 px-6 py-4 border-b border-slate-100 flex justify-between items-center">
               <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
                 <Settings size={18} className="text-blue-600"/> Minha Conta
@@ -181,7 +197,6 @@ export default function Header({ user, handleLogout, setActiveTab }) {
                 )}
               </form>
             </div>
-
           </motion.div>
         </div>
       )}

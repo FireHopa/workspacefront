@@ -103,6 +103,7 @@ export default function TeamManagement({ setActiveTab }) {
                   <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Acesso</label>
                   <select value={newMember.role} onChange={e => setNewMember({...newMember, role: e.target.value})} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600 outline-none bg-slate-50 text-sm font-semibold text-slate-700">
                     <option value="employee">Parceiro</option>
+                    <option value="conferente">Conferente</option>
                     <option value="admin">Admin</option>
                   </select>
                 </div>
@@ -177,9 +178,10 @@ export default function TeamManagement({ setActiveTab }) {
                       <select 
                         value={member.role} 
                         onChange={(e) => handleUpdateUser(member.id, 'role', e.target.value)}
-                        className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1.5 rounded outline-none cursor-pointer border ${member.role === 'admin' ? 'bg-slate-800 text-white border-slate-800' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
+                        className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1.5 rounded outline-none cursor-pointer border ${member.role === 'admin' ? 'bg-slate-800 text-white border-slate-800' : (member.role === 'conferente' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200')}`}
                       >
                         <option value="employee">Parceiro</option>
+                        <option value="conferente">Conferente</option>
                         <option value="admin">Administrador</option>
                       </select>
                     </td>

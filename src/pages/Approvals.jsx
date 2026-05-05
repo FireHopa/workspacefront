@@ -38,7 +38,7 @@ export default function Approvals({ setActiveTab }) {
       ])
       const tempMap = {}; templatesRes.data.forEach(t => tempMap[t.id] = t); setTemplates(tempMap)
       const userMap = {}; usersRes.data.forEach(u => userMap[u.id] = u); setUsers(userMap)
-      setPendingTasks(tasksRes.data.filter(t => t.status === 'Aguardando Aprovação'))
+      setPendingTasks(tasksRes.data.filter(t => ['Aguardando Aprovação', 'Aguardando OK Final'].includes(t.status)))
     } catch (error) { console.error(error) }
   }
 
@@ -65,7 +65,9 @@ export default function Approvals({ setActiveTab }) {
         dynamic_data: taskToUpdate.dynamic_data, 
         status: newStatus,
         admin_feedback: newStatus === 'A Fazer' ? feedbackText : '', 
-        folder: nextFolder
+        folder: nextFolder,
+        actor_id: jwtDecode(localStorage.getItem('token'))?.id,
+        actor_name: adminName
       })
 
       await api.post(`/users/${employeeId}/notifications`, { text: newStatus === 'Aprovada' ? 'Sua tarefa foi aprovada!' : 'Atenção: Tarefa devolvida para correção.' })
@@ -107,7 +109,7 @@ export default function Approvals({ setActiveTab }) {
         {/* CABEÇALHO COM O NOVO FILTRO DE FUNCIONÁRIO */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 pb-6 border-b border-slate-100 gap-4">
           <div>
-            <h4 className="text-xl font-bold text-slate-800">Aguardando Revisão</h4>
+            <h4 className="text-xl font-bold text-slate-800">Aguardando Aprovação / OK Final</h4>
             <p className="text-slate-500 text-sm mt-1">Verifique o trabalho da equipe e converse via chat se necessário.</p>
           </div>
           
@@ -137,7 +139,7 @@ export default function Approvals({ setActiveTab }) {
           <div className="text-center py-16 flex flex-col items-center">
             <CheckCircle size={56} className="text-slate-200 mb-4" />
             <h4 className="text-xl font-bold text-slate-700">Tudo aprovado!</h4>
-            <p className="text-slate-400 mt-1">Nenhuma tarefa aguardando sua revisão no momento.</p>
+            <p className="text-slate-400 mt-1">Nenhuma tarefa aguardando aprovação ou OK final no momento.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -246,7 +248,7 @@ export default function Approvals({ setActiveTab }) {
                       rows="2"
                     />
                     <div className="flex gap-3">
-                      <button onClick={() => handleAction(task.id, 'Aprovada', employee.id)} className="flex-1 bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 rounded-xl transition-all shadow-md flex justify-center items-center gap-2"><CheckCircle size={18} /> Aprovar</button>
+                      <button onClick={() => handleAction(task.id, 'Aprovada', employee.id)} className="flex-1 bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 rounded-xl transition-all shadow-md flex justify-center items-center gap-2"><CheckCircle size={18} /> Aprovar / OK Final</button>
                       <button onClick={() => handleAction(task.id, 'A Fazer', employee.id)} className="flex-1 bg-white hover:bg-red-50 text-red-600 font-bold py-3 rounded-xl transition-all border border-red-200 flex justify-center items-center gap-2"><XCircle size={18} /> Devolver</button>
                     </div>
                   </div>
