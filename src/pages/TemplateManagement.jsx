@@ -1,17 +1,20 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { api } from '../services/api'
-import { ArrowLeft, Wrench, Pencil, Plus, X, FileBox, CheckCircle2, AlertCircle, Copy, Repeat, CalendarCheck } from 'lucide-react'
+import { ArrowLeft, Wrench, Pencil, Plus, X, FileBox, CheckCircle2, AlertCircle, Copy, Repeat, CalendarCheck, Asterisk } from 'lucide-react'
 
 export default function TemplateManagement({ setActiveTab }) {
   const [templates, setTemplates] = useState([])
   const [templateName, setTemplateName] = useState('')
   const [isRecurrent, setIsRecurrent] = useState(false) // NOVO ESTADO
-  const [fields, setFields] = useState([{ id: Date.now(), label: '', type: 'text' }])
+  const [fields, setFields] = useState([{ id: Date.now(), label: '', type: 'text', required: false }])
   const [msg, setMsg] = useState('')
   const [editingId, setEditingId] = useState(null)
 
   useEffect(() => { fetchTemplates() }, [])
+
+  const getFieldType = (fieldConfig) => (typeof fieldConfig === 'object' && fieldConfig !== null ? (fieldConfig.type || 'text') : (fieldConfig || 'text'))
+  const isFieldRequired = (fieldConfig) => (typeof fieldConfig === 'object' && fieldConfig !== null ? Boolean(fieldConfig.required) : false)
 
   const fetchTemplates = async () => {
     try {
@@ -20,7 +23,7 @@ export default function TemplateManagement({ setActiveTab }) {
     } catch (error) { console.error("Erro ao buscar templates", error) }
   }
 
-  const addField = () => setFields([...fields, { id: Date.now(), label: '', type: 'text' }])
+  const addField = () => setFields([...fields, { id: Date.now(), label: '', type: 'text', required: false }])
   const removeField = (idToRemove) => setFields(fields.filter(field => field.id !== idToRemove))
   const handleFieldChange = (id, key, value) => setFields(fields.map(field => field.id === id ? { ...field, [key]: value } : field))
 
@@ -29,11 +32,14 @@ export default function TemplateManagement({ setActiveTab }) {
     setTemplateName(template.name)
     setIsRecurrent(template.is_recurrent || false) // CARREGA O ESTADO DO BANCO
     
-    const loadedFields = Object.entries(template.schema_fields).map(([label, type], index) => ({
-      id: Date.now() + index, label, type
+    const loadedFields = Object.entries(template.schema_fields || {}).map(([label, fieldConfig], index) => ({
+      id: Date.now() + index,
+      label,
+      type: getFieldType(fieldConfig),
+      required: isFieldRequired(fieldConfig)
     }))
     
-    setFields(loadedFields.length > 0 ? loadedFields : [{ id: Date.now(), label: '', type: 'text' }])
+    setFields(loadedFields.length > 0 ? loadedFields : [{ id: Date.now(), label: '', type: 'text', required: false }])
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -60,7 +66,7 @@ export default function TemplateManagement({ setActiveTab }) {
     setEditingId(null)
     setTemplateName('')
     setIsRecurrent(false) // RESETA
-    setFields([{ id: Date.now(), label: '', type: 'text' }])
+    setFields([{ id: Date.now(), label: '', type: 'text', required: false }])
     setMsg('')
   }
 
@@ -73,7 +79,7 @@ export default function TemplateManagement({ setActiveTab }) {
     if (validFields.length === 0) return setMsg('Erro: Adicione pelo menos um campo com nome.')
 
     const schema_fields = {}
-    validFields.forEach(field => { schema_fields[field.label] = field.type })
+    validFields.forEach(field => { schema_fields[field.label] = { type: field.type, required: Boolean(field.required) } })
 
     const payload = { 
       name: templateName, 
@@ -151,13 +157,19 @@ export default function TemplateManagement({ setActiveTab }) {
                 <div key={field.id} className="flex gap-2 items-start bg-slate-50 p-3 rounded-xl border border-slate-200">
                   <div className="flex-1 space-y-2">
                     <input type="text" value={field.label} onChange={e => handleFieldChange(field.id, 'label', e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-lg outline-none text-sm focus:border-slate-400" placeholder={`Nome da exigência ${index + 1}`} required />
-                    <select value={field.type} onChange={e => handleFieldChange(field.id, 'type', e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-lg outline-none text-sm bg-white font-medium text-slate-700">
-                      <option value="text">Texto Curto</option>
-                      <option value="textarea">Texto Longo (Parágrafo)</option>
-                      <option value="url">Link / URL do Drive</option>
-                      <option value="checkbox">Caixa de Seleção de Confirmação</option>
-                      <option value="file">Anexo (Imagem ou Documento)</option> 
-                    </select>
+                    <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2">
+                      <select value={field.type} onChange={e => handleFieldChange(field.id, 'type', e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-lg outline-none text-sm bg-white font-medium text-slate-700">
+                        <option value="text">Texto Curto</option>
+                        <option value="textarea">Texto Longo (Parágrafo)</option>
+                        <option value="url">Link / URL do Drive</option>
+                        <option value="checkbox">Caixa de Seleção de Confirmação</option>
+                        <option value="file">Anexo (Imagem ou Documento)</option> 
+                      </select>
+                      <label className="flex items-center justify-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg cursor-pointer hover:border-red-200 hover:bg-red-50 transition-colors text-xs font-bold text-slate-600 whitespace-nowrap">
+                        <input type="checkbox" checked={Boolean(field.required)} onChange={e => handleFieldChange(field.id, 'required', e.target.checked)} className="accent-red-600 w-4 h-4" />
+                        Obrigatório
+                      </label>
+                    </div>
                   </div>
                   {fields.length > 1 && (
                     <button type="button" onClick={() => removeField(field.id)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors mt-1">
@@ -223,11 +235,16 @@ export default function TemplateManagement({ setActiveTab }) {
                     </div>
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">
-                    {Object.entries(template.schema_fields).map(([label, type]) => (
-                      <span key={label} className="bg-white text-slate-600 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded border border-slate-200">
-                        {label} <span className="text-slate-400 font-normal lowercase">({type})</span>
-                      </span>
-                    ))}
+                    {Object.entries(template.schema_fields || {}).map(([label, fieldConfig]) => {
+                      const type = getFieldType(fieldConfig)
+                      const required = isFieldRequired(fieldConfig)
+                      return (
+                        <span key={label} className={`bg-white text-slate-600 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded border ${required ? 'border-red-200 text-red-700' : 'border-slate-200'}`}>
+                          {label} <span className="text-slate-400 font-normal lowercase">({type})</span>
+                          {required && <span className="inline-flex items-center gap-0.5 ml-1 text-red-600"><Asterisk size={9} /> obrigatório</span>}
+                        </span>
+                      )
+                    })}
                   </div>
                 </div>
               ))

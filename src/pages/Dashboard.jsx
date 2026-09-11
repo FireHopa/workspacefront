@@ -106,10 +106,19 @@ export default function Dashboard({ user, setActiveTab }) {
 
   const handleSubmitTask = async (taskId, e) => {
     e.preventDefault(); setMsg('')
+    const task = tasks.find(t => t.id === taskId)
+    const template = templates[task?.template_id]
+    const answers = taskAnswers[taskId] || {}
+    const missingRequiredFields = getMissingRequiredFields(template, answers)
+
+    if (missingRequiredFields.length > 0) {
+      setMsg(`Erro: preencha os campos obrigatórios: ${missingRequiredFields.join(', ')}.`)
+      return
+    }
+
     try {
-      const task = tasks.find(t => t.id === taskId)
       await api.put(`/tasks/${taskId}`, { 
-        dynamic_data: taskAnswers[taskId], 
+        dynamic_data: answers, 
         status: task?.status || 'A Fazer', 
         folder: task?.folder || 'Entrada',
         admin_feedback: '',
@@ -121,7 +130,9 @@ export default function Dashboard({ user, setActiveTab }) {
       setMsg(task?.reviewer_id ? 'Tarefa enviada para conferência!' : 'Tarefa enviada para aprovação!')
       fetchEmployeeData()
       setTimeout(() => setMsg(''), 4000)
-    } catch (error) { setMsg('Erro ao enviar tarefa.') }
+    } catch (error) {
+      setMsg(error.response?.data?.detail || 'Erro ao enviar tarefa.')
+    }
   }
 
   const handleCreateFolder = (e) => {
@@ -189,6 +200,26 @@ export default function Dashboard({ user, setActiveTab }) {
     if (clean === 'Urgente') return 'bg-red-50 text-red-700 border-red-200'
     if (clean === 'Alta') return 'bg-amber-50 text-amber-700 border-amber-200'
     return 'bg-slate-50 text-slate-600 border-slate-200'
+  }
+
+  const getFieldType = (fieldConfig) => (typeof fieldConfig === 'object' && fieldConfig !== null ? (fieldConfig.type || 'text') : (fieldConfig || 'text'))
+  const isFieldRequired = (fieldConfig) => (typeof fieldConfig === 'object' && fieldConfig !== null ? Boolean(fieldConfig.required) : false)
+  const isRequiredValueFilled = (fieldType, value) => {
+    if (fieldType === 'checkbox') return value === true
+    if (value === null || value === undefined) return false
+    if (typeof value === 'string') return value.trim() !== '' && value.trim().toLowerCase() !== 'loading...'
+    if (Array.isArray(value)) return value.length > 0
+    if (typeof value === 'object') return Object.keys(value).length > 0
+    return Boolean(value)
+  }
+  const getMissingRequiredFields = (template, answers = {}) => {
+    if (!template?.schema_fields) return []
+    return Object.entries(template.schema_fields)
+      .filter(([label, fieldConfig]) => {
+        const fieldType = getFieldType(fieldConfig)
+        return isFieldRequired(fieldConfig) && !isRequiredValueFilled(fieldType, answers[label])
+      })
+      .map(([label]) => label)
   }
 
   if (user.role === 'employee') {
@@ -362,13 +393,18 @@ export default function Dashboard({ user, setActiveTab }) {
                       )}
 
                       <form onSubmit={(e) => handleSubmitTask(task.id, e)} className="space-y-4 pt-2">
-                        {Object.entries(template.schema_fields).map(([label, type]) => {
-                          const value = taskAnswers[task.id]?.[label] || ''
+                        {Object.entries(template.schema_fields || {}).map(([label, fieldConfig]) => {
+                          const type = getFieldType(fieldConfig)
+                          const required = isFieldRequired(fieldConfig)
+                          const value = taskAnswers[task.id]?.[label] ?? ''
                           return (
                             <div key={label} className="space-y-1.5">
-                              <label className="block text-sm font-semibold text-slate-700">{label}</label>
-                              {(type === 'text' || type === 'url') && <input type={type} value={value} onChange={(e) => handleFieldChange(task.id, label, e.target.value)} disabled={!isPending} className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:bg-slate-50 text-sm" required />}
-                              {type === 'textarea' && <textarea value={value} onChange={(e) => handleFieldChange(task.id, label, e.target.value)} disabled={!isPending} rows="2" className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:bg-slate-50 resize-none text-sm" required />}
+                              <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
+                                {label}
+                                {required && <span className="text-[10px] font-bold uppercase tracking-wider bg-red-50 text-red-600 border border-red-100 px-1.5 py-0.5 rounded">Obrigatório</span>}
+                              </label>
+                              {(type === 'text' || type === 'url') && <input type={type} value={value} onChange={(e) => handleFieldChange(task.id, label, e.target.value)} disabled={!isPending} className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:bg-slate-50 text-sm" required={required} />}
+                              {type === 'textarea' && <textarea value={value} onChange={(e) => handleFieldChange(task.id, label, e.target.value)} disabled={!isPending} rows="2" className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:bg-slate-50 resize-none text-sm" required={required} />}
                               {type === 'checkbox' && (
                                 <label className="flex items-center gap-2 cursor-pointer w-fit">
                                   <input type="checkbox" checked={value === true} onChange={(e) => handleFieldChange(task.id, label, e.target.checked)} disabled={!isPending} className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
@@ -380,11 +416,11 @@ export default function Dashboard({ user, setActiveTab }) {
                                   {isPending && !value && (
                                     <div className="flex items-center gap-2">
                                       <Paperclip size={16} className="text-slate-400" />
-                                      <input type="file" onChange={(e) => handleFileUpload(task.id, label, e.target.files[0])} className="text-sm text-slate-500 cursor-pointer" required />
+                                      <input type="file" onChange={(e) => handleFileUpload(task.id, label, e.target.files[0])} className="text-sm text-slate-500 cursor-pointer" required={required} />
                                     </div>
                                   )}
                                   {value === 'loading...' && <div className="text-sm text-amber-600 font-bold">Fazendo upload...</div>}
-                                  {value && value.startsWith('http') && (
+                                  {value && value.startsWith?.('http') && (
                                     <div className="space-y-3">
                                       {isImage(value) ? (
                                         <div className="relative group">
