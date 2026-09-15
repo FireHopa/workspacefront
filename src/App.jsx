@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { AnimatePresence } from 'framer-motion'
-import { jwtDecode } from "jwt-decode"
 import { api } from './services/api'
 
 import Login from './pages/Login'
+import FinanceDashboard from './pages/FinanceDashboard'
 import Dashboard from './pages/Dashboard'
 import TeamManagement from './pages/TeamManagement'
 import TemplateManagement from './pages/TemplateManagement'
@@ -19,30 +19,50 @@ export default function App() {
   const [token, setToken] = useState(localStorage.getItem('token'))
   const [user, setUser] = useState(null)
   const [activeTab, setActiveTab] = useState('dashboard')
+  const [authError, setAuthError] = useState('')
+  const [authAttempt, setAuthAttempt] = useState(0)
 
   useEffect(() => {
-    if (token) {
-      try {
-        const decoded = jwtDecode(token)
-        setUser(decoded)
-        localStorage.setItem('token', token)
-        api.defaults.headers.common['Authorization'] = `Bearer ${token}`
-      } catch (err) { handleLogout() }
-    } else {
+    let cancelled = false
+    setUser(null)
+    setAuthError('')
+    if (!token) {
       delete api.defaults.headers.common['Authorization']
       localStorage.removeItem('token')
-      setUser(null)
+      return
     }
-  }, [token])
+    localStorage.setItem('token', token)
+    api.defaults.headers.common['Authorization'] = `Bearer ${token}`
+    api.get('/me').then(({ data }) => {
+      if (!cancelled) setUser(data)
+    }).catch(error => {
+      if (cancelled) return
+      if ([401, 403].includes(error.response?.status)) setToken(null)
+      else setAuthError('Não foi possível conectar ao servidor.')
+    })
+    return () => { cancelled = true }
+  }, [token, authAttempt])
+
+  useEffect(() => {
+    const interceptor = api.interceptors.response.use(response => response, error => {
+      if (error.response?.status === 401 && error.config?.url !== '/token') setToken(null)
+      return Promise.reject(error)
+    })
+    return () => api.interceptors.response.eject(interceptor)
+  }, [])
 
   const handleLogout = () => {
     setToken(null)
     setActiveTab('dashboard')
   }
 
-  if (!token || !user) {
+  if (!token) {
     return <Login setToken={setToken} />
   }
+
+  if (!user) return <div className="min-h-screen flex items-center justify-center p-6"><div role="status" className="text-center space-y-4"><p>{authError || 'Carregando sua conta…'}</p>{authError && <><button className="px-4 py-2 bg-blue-600 text-white rounded-lg" onClick={() => setAuthAttempt(n => n + 1)}>Tentar novamente</button><button className="px-4 py-2" onClick={handleLogout}>Voltar ao login</button></>}</div></div>
+
+  if (user.role === 'finance') return <FinanceDashboard user={user} onLogout={handleLogout} />
 
   const canManage = user.role === 'admin'
   const canCreateTask = user.role === 'admin' || user.role === 'employee'
