@@ -31,6 +31,37 @@ function Field({ label, children, wide = false }) {
   return <label className={wide ? 'fin-field fin-wide' : 'fin-field'}><span>{label}</span>{children}</label>
 }
 
+function BrDateInput({ value, onChange, min, max, ariaLabel }) {
+  const toDisplay = iso => iso ? iso.split('-').reverse().join('/') : ''
+  const mask = raw => {
+    const digits = raw.replace(/\D/g, '').slice(0, 8)
+    if (digits.length <= 2) return digits
+    if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`
+    return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`
+  }
+  const toIso = br => {
+    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(br)) return ''
+    const [day, month, year] = br.split('/').map(Number)
+    const date = new Date(Date.UTC(year, month - 1, day))
+    if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return ''
+    return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  }
+  const [display, setDisplay] = useState(() => toDisplay(value))
+  useEffect(() => setDisplay(toDisplay(value)), [value])
+  const handleChange = event => {
+    const next = mask(event.target.value)
+    setDisplay(next)
+    if (!next) return onChange('')
+    const iso = toIso(next)
+    if (iso && (!min || iso >= min) && (!max || iso <= max)) onChange(iso)
+  }
+  const validDisplay = () => {
+    const iso = toIso(display)
+    return iso && (!min || iso >= min) && (!max || iso <= max)
+  }
+  return <input type="text" inputMode="numeric" placeholder="DD/MM/AAAA" maxLength={10} aria-label={ariaLabel} value={display} onChange={handleChange} onBlur={() => { if (display && !validDisplay()) setDisplay(toDisplay(value)) }} />
+}
+
 function ContractForm({ plans, quote, today, busy, error, onSubmit }) {
   const [form, setForm] = useState({ request_key: crypto.randomUUID(), name: '', company: '', contact: '', plan_id: '', payment_type: 'a_vista', payment_method: 'Wise', contract_date: today, currency: 'EUR', total: '', total_eur: '', installments: 1 })
   const change = (key, value) => setForm(current => ({ ...current, [key]: value }))
@@ -105,6 +136,8 @@ export default function FinanceDashboard({ user, onLogout }) {
   const [notice, setNotice] = useState('')
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('todos')
+  const [commissionStartDate, setCommissionStartDate] = useState('')
+  const [commissionEndDate, setCommissionEndDate] = useState('')
   const [modal, setModal] = useState(null)
   const [modalError, setModalError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -149,8 +182,10 @@ export default function FinanceDashboard({ user, onLogout }) {
   const matches = contract => `${contract.name} ${contract.company} ${contract.contact} ${contract.plan_name}`.toLocaleLowerCase('pt-BR').includes(search.toLocaleLowerCase('pt-BR'))
   const visibleContracts = contracts.filter(contract => matches(contract) && (filter === 'todos' || contract.status === filter))
   const items = allItems.filter(item => matches(item.contract) && (filter === 'todos' || item.status === filter)).sort((a, b) => a.due_date.localeCompare(b.due_date) || a.id - b.id)
-  const commissions = allItems.filter(item => item.paid_on && matches(item.contract) && (filter === 'todos' || (filter === 'pagas' ? item.commission_paid_on : !item.commission_paid_on))).sort((a, b) => b.paid_on.localeCompare(a.paid_on) || b.id - a.id)
-  const navigate = next => { setTab(next); setSearch(''); setFilter('todos'); setNotice('') }
+  const inCommissionPeriod = item => (!commissionStartDate || item.paid_on >= commissionStartDate) && (!commissionEndDate || item.paid_on <= commissionEndDate)
+  const commissions = allItems.filter(item => item.paid_on && inCommissionPeriod(item) && matches(item.contract) && (filter === 'todos' || (filter === 'pagas' ? item.commission_paid_on : !item.commission_paid_on))).sort((a, b) => b.paid_on.localeCompare(a.paid_on) || b.id - a.id)
+  const commissionPeriodPendingTotal = allItems.filter(item => item.paid_on && inCommissionPeriod(item) && matches(item.contract) && !item.commission_paid_on).reduce((total, item) => total + (item.commission_eur_cents || 0), 0)
+  const navigate = next => { setTab(next); setSearch(''); setFilter('todos'); setCommissionStartDate(''); setCommissionEndDate(''); setNotice('') }
   const detailContract = modal?.type === 'detail' ? contracts.find(contract => contract.id === modal.contract.id) || modal.contract : null
   const installmentTable = (rows, isCommission = false) => <div className="fin-table-wrap"><table><thead><tr><th>Empresa / parcela</th><th>{isCommission ? 'Recebimento' : 'Vencimento'}</th><th>{isCommission ? 'Base em euro' : 'Valor'}</th><th>{isCommission ? 'Comissão · 5%' : 'Status'}</th><th>{isCommission ? 'Pagamento da comissão' : 'Recebimento'}</th><th><span className="sr-only">Ações</span></th></tr></thead><tbody>{rows.map(item => <tr key={item.id}>
     <td><button className="fin-text-btn" onClick={() => open({ type: 'detail', contract: item.contract })}>{item.contract.company}</button><small>{item.number}/{item.contract.installment_count} · {item.contract.name}</small></td>
@@ -174,7 +209,8 @@ export default function FinanceDashboard({ user, onLogout }) {
         </div><div className="fin-status-strip"><div><span>Vence em até 7 dias</span><strong>{money(totals.due_soon_eur_cents)}</strong></div><div><span>Atrasado</span><strong className="fin-danger">{money(totals.overdue_eur_cents)}</strong></div><div><span>Comissões já pagas</span><strong>{money(totals.commission_paid_eur_cents)}</strong></div><div><span>Contratos</span><strong>{contracts.filter(contract => contract.status === 'ativo').length} ativos · {contracts.filter(contract => contract.status === 'encerrado').length} encerrados</strong></div></div>
           {!contracts.length ? <section className="fin-panel fin-empty"><FileText size={36} /><h2>Seu primeiro contrato começa aqui</h2><p>{plans.some(plan => plan.active) ? 'Cadastre o cliente e o primeiro pagamento. As próximas parcelas serão organizadas automaticamente.' : 'Cadastre um plano para começar a registrar seus contratos.'}</p><button className="fin-btn" onClick={() => open({ type: plans.some(plan => plan.active) ? 'contract' : 'plan' })}><Plus size={18} />{plans.some(plan => plan.active) ? 'Cadastrar contrato' : 'Cadastrar plano'}</button></section> : <section className="fin-panel"><div className="fin-panel-head"><h2>Atenção aos vencimentos</h2><button className="fin-text-btn" onClick={() => navigate('receivables')}>Ver todos</button></div>{installmentTable(allItems.filter(item => ['atrasado', 'a_receber'].includes(item.status)).sort((a, b) => a.due_date.localeCompare(b.due_date)).slice(0, 10))}</section>}
         </>}
-        {['contracts', 'receivables', 'commissions'].includes(tab) && <section className="fin-panel"><div className="fin-toolbar"><label className="fin-search"><Search size={18} /><input aria-label="Buscar registros" value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar nome, empresa ou contato" /></label><label className="fin-filter"><span>Status</span><select value={filter} onChange={event => setFilter(event.target.value)}><option value="todos">Todos</option>{(tab === 'contracts' ? [['ativo', 'Ativos'], ['encerrado', 'Encerrados']] : tab === 'commissions' ? [['pendentes', 'A pagar'], ['pagas', 'Pagas']] : [['agendado', 'Agendados'], ['a_receber', 'A receber (até 7 dias)'], ['atrasado', 'Atrasados'], ['pago', 'Pagos']]).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
+        {['contracts', 'receivables', 'commissions'].includes(tab) && <section className="fin-panel"><div className={`fin-toolbar ${tab === 'commissions' ? 'with-period' : ''}`}><label className="fin-search"><Search size={18} /><input aria-label="Buscar registros" value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar nome, empresa ou contato" /></label>{tab === 'commissions' && <div className="fin-period-filter" aria-label="Filtrar comissões por período de recebimento"><span>Período do recebimento</span><label><small>De</small><BrDateInput ariaLabel="Data inicial do período" max={commissionEndDate || today} value={commissionStartDate} onChange={setCommissionStartDate} /></label><label><small>Até</small><BrDateInput ariaLabel="Data final do período" min={commissionStartDate || undefined} max={today} value={commissionEndDate} onChange={setCommissionEndDate} /></label>{(commissionStartDate || commissionEndDate) && <button type="button" className="fin-clear-filter" onClick={() => { setCommissionStartDate(''); setCommissionEndDate('') }}>Limpar</button>}</div>}<label className="fin-filter"><span>Status</span><select value={filter} onChange={event => setFilter(event.target.value)}><option value="todos">Todos</option>{(tab === 'contracts' ? [['ativo', 'Ativos'], ['encerrado', 'Encerrados']] : tab === 'commissions' ? [['pendentes', 'A pagar'], ['pagas', 'Pagas']] : [['agendado', 'Agendados'], ['a_receber', 'A receber (até 7 dias)'], ['atrasado', 'Atrasados'], ['pago', 'Pagos']]).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
+          {tab === 'commissions' && commissionStartDate && commissionEndDate && <div className="fin-period-total"><span>Total a pagar no período</span><strong>{money(commissionPeriodPendingTotal)}</strong><small>{dateLabel(commissionStartDate)} até {dateLabel(commissionEndDate)}</small></div>}
           {tab === 'contracts' ? <div className="fin-table-wrap"><table><thead><tr><th>Cliente / empresa</th><th>Plano</th><th>Contrato</th><th>Valor total</th><th>Parcelas</th><th>Status</th><th><span className="sr-only">Ações</span></th></tr></thead><tbody>{visibleContracts.map(contract => <tr key={contract.id}><td><strong>{contract.company}</strong><small>{contract.name}</small></td><td>{contract.plan_name}</td><td>{dateLabel(contract.contract_date)}<small>{contract.payment_method}</small></td><td>{money(contract.total_cents, contract.currency)}{contract.currency === 'BRL' && <small>Base: {money(contract.total_eur_cents)}</small>}</td><td>{contract.installments.filter(item => item.paid_on).length}/{contract.installment_count} pagas</td><td>{statusBadge(contract.status)}</td><td><button className="fin-text-btn" onClick={() => open({ type: 'detail', contract })}>Ver contrato</button></td></tr>)}</tbody></table>{!visibleContracts.length && <div className="fin-empty">Nenhum contrato encontrado.</div>}</div> : installmentTable(tab === 'commissions' ? commissions : items, tab === 'commissions')}
         </section>}
         {tab === 'plans' && <section className="fin-panel"><div className="fin-panel-head"><h2>Planos cadastrados</h2><span>{plans.length} planos</span></div><div className="fin-table-wrap"><table><thead><tr><th>Plano</th><th>Valor sugerido</th><th>Disponibilidade</th><th><span className="sr-only">Ações</span></th></tr></thead><tbody>{plans.map(plan => <tr key={plan.id}><td><strong>{plan.name}</strong></td><td>{money(plan.amount_cents, plan.currency)}</td><td><span className={`fin-badge ${plan.active ? 'pago' : 'agendado'}`}>{plan.active ? 'Ativo' : 'Arquivado'}</span></td><td><button className="fin-text-btn" onClick={() => open({ type: 'plan', plan })}>Editar plano</button></td></tr>)}</tbody></table>{!plans.length && <div className="fin-empty">Cadastre seu primeiro plano no botão Novo plano.</div>}</div></section>}
