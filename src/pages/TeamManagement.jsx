@@ -3,6 +3,8 @@ import { motion } from 'framer-motion'
 import { api } from '../services/api'
 import { ArrowLeft, ShieldAlert, Users, Plus, CheckCircle2, AlertCircle } from 'lucide-react'
 
+const isStandaloneRole = (role) => ['finance', 'social_publisher', 'social_publisher_admin'].includes(role)
+
 export default function TeamManagement({ setActiveTab }) {
   const [teamList, setTeamList] = useState([])
   const [teamRoles, setTeamRoles] = useState([])
@@ -105,12 +107,14 @@ export default function TeamManagement({ setActiveTab }) {
                     <option value="employee">Parceiro</option>
                     <option value="conferente">Conferente</option>
                     <option value="finance">Financeiro (sistema separado)</option>
+                    <option value="social_publisher">Social Publisher — Operador</option>
+                    <option value="social_publisher_admin">Social Publisher — Administrador</option>
                     <option value="admin">Admin</option>
                   </select>
                 </div>
                 <div>
                   <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Função</label>
-                  <select disabled={newMember.role === 'finance'} value={newMember.team_role || ''} onChange={e => setNewMember({...newMember, team_role: e.target.value})} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600 outline-none bg-slate-50 text-sm font-semibold text-slate-700">
+                  <select disabled={isStandaloneRole(newMember.role)} value={newMember.team_role || ''} onChange={e => setNewMember({...newMember, team_role: e.target.value})} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-600 outline-none bg-slate-50 text-sm font-semibold text-slate-700">
                     <option value="">(Nenhum)</option>
                     {teamRoles.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
                   </select>
@@ -120,7 +124,7 @@ export default function TeamManagement({ setActiveTab }) {
               {/* A NOVA CAIXINHA DE ESTRATEGISTA */}
               <div className="pt-2">
                 <label className="flex items-center gap-2 cursor-pointer p-3 border border-purple-200 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors">
-                  <input type="checkbox" disabled={newMember.role === 'finance'} checked={newMember.role !== 'finance' && newMember.is_strategist} onChange={e => setNewMember({...newMember, is_strategist: e.target.checked})} className="w-4 h-4 text-purple-600 rounded border-purple-300 focus:ring-purple-500" />
+                  <input type="checkbox" disabled={isStandaloneRole(newMember.role)} checked={!isStandaloneRole(newMember.role) && newMember.is_strategist} onChange={e => setNewMember({...newMember, is_strategist: e.target.checked})} className="w-4 h-4 text-purple-600 rounded border-purple-300 focus:ring-purple-500" />
                   <div>
                     <span className="block text-[11px] font-bold text-purple-700 uppercase tracking-wider">Acesso: Estrategista</span>
                     <span className="block text-xs text-purple-600 mt-0.5">Libera a aba de Clientes para este usuário.</span>
@@ -183,14 +187,16 @@ export default function TeamManagement({ setActiveTab }) {
                       >
                         <option value="employee">Parceiro</option>
                         <option value="conferente">Conferente</option>
-                    <option value="finance">Financeiro (sistema separado)</option>
+                        <option value="finance">Financeiro (sistema separado)</option>
+                        <option value="social_publisher">Social Publisher — Operador</option>
+                        <option value="social_publisher_admin">Social Publisher — Administrador</option>
                         <option value="admin">Administrador</option>
                       </select>
                     </td>
 
                     <td className="px-6 py-4">
                       <select 
-                        disabled={member.role === 'finance'}
+                        disabled={isStandaloneRole(member.role)}
                         value={member.team_role || ''} 
                         onChange={(e) => handleUpdateUser(member.id, 'team_role', e.target.value)}
                         className="text-xs font-bold px-2.5 py-1.5 rounded bg-white border border-slate-200 text-slate-700 outline-none cursor-pointer focus:ring-2 focus:ring-blue-600"
@@ -203,7 +209,7 @@ export default function TeamManagement({ setActiveTab }) {
                     <td className="px-6 py-4 text-center">
                       <input 
                         type="checkbox" 
-                        disabled={member.role === 'finance'}
+                        disabled={isStandaloneRole(member.role)}
                         checked={member.is_strategist} 
                         onChange={(e) => handleUpdateUser(member.id, 'is_strategist', e.target.checked)} 
                         className="w-5 h-5 text-purple-600 rounded border-slate-300 focus:ring-purple-500 cursor-pointer"

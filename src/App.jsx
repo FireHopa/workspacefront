@@ -4,6 +4,7 @@ import { api } from './services/api'
 
 import Login from './pages/Login'
 import FinanceDashboard from './pages/FinanceDashboard'
+import SocialPublisherRedirect from './pages/SocialPublisherRedirect'
 import Dashboard from './pages/Dashboard'
 import TeamManagement from './pages/TeamManagement'
 import TemplateManagement from './pages/TemplateManagement'
@@ -16,7 +17,15 @@ import Productivity from './pages/Productivity'
 import ConferencePanel from './pages/ConferencePanel'
 
 export default function App() {
-  const [token, setToken] = useState(localStorage.getItem('token'))
+  const logoutRequested = new URLSearchParams(window.location.search).get('workspace_logout') === '1'
+  if (logoutRequested) {
+    localStorage.removeItem('token')
+    const cleanUrl = new URL(window.location.href)
+    cleanUrl.searchParams.delete('workspace_logout')
+    window.history.replaceState({}, '', `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`)
+  }
+
+  const [token, setToken] = useState(logoutRequested ? null : localStorage.getItem('token'))
   const [user, setUser] = useState(null)
   const [activeTab, setActiveTab] = useState('dashboard')
   const [authError, setAuthError] = useState('')
@@ -63,6 +72,7 @@ export default function App() {
   if (!user) return <div className="min-h-screen flex items-center justify-center p-6"><div role="status" className="text-center space-y-4"><p>{authError || 'Carregando sua conta…'}</p>{authError && <><button className="px-4 py-2 bg-blue-600 text-white rounded-lg" onClick={() => setAuthAttempt(n => n + 1)}>Tentar novamente</button><button className="px-4 py-2" onClick={handleLogout}>Voltar ao login</button></>}</div></div>
 
   if (user.role === 'finance') return <FinanceDashboard user={user} onLogout={handleLogout} />
+  if (['social_publisher', 'social_publisher_admin'].includes(user.role)) return <SocialPublisherRedirect token={token} onLogout={handleLogout} />
 
   const canManage = user.role === 'admin'
   const canCreateTask = user.role === 'admin' || user.role === 'employee'
