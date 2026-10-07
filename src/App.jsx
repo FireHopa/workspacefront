@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { lazy, Suspense, useState, useEffect } from 'react'
 import { AnimatePresence } from 'framer-motion'
 import { api } from './services/api'
 
@@ -15,6 +15,8 @@ import Header from './components/Header'
 import ClientsManagement from './pages/ClientsManagement'
 import Productivity from './pages/Productivity'
 import ConferencePanel from './pages/ConferencePanel'
+
+const MapaIADashboard = lazy(() => import('./modules/mapa-ia/App'))
 
 export default function App() {
   const logoutRequested = new URLSearchParams(window.location.search).get('workspace_logout') === '1'
@@ -73,6 +75,7 @@ export default function App() {
 
   if (user.role === 'finance') return <FinanceDashboard user={user} onLogout={handleLogout} />
   if (['social_publisher', 'social_publisher_admin'].includes(user.role)) return <SocialPublisherRedirect token={token} onLogout={handleLogout} />
+  if (user.role === 'mapa_ia') return <Suspense fallback={<div className="min-h-screen flex items-center justify-center" role="status">Carregando Mapa IA · Imersões…</div>}><MapaIADashboard key={user.id} user={user} onLogout={handleLogout} /></Suspense>
 
   const canManage = user.role === 'admin'
   const canCreateTask = user.role === 'admin' || user.role === 'employee'

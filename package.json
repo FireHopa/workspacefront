@@ -7,16 +7,23 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck:mapa-ia": "tsc -p tsconfig.mapa-ia.json"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.2.1",
     "axios": "^1.13.6",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
     "framer-motion": "^12.35.0",
     "jwt-decode": "^4.0.0",
     "lucide-react": "^0.577.0",
+    "radix-ui": "1.6.7",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "sonner": "2.0.8",
+    "tailwind-merge": "3.6.0",
+    "tw-animate-css": "1.4.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
@@ -30,6 +37,7 @@
     "globals": "^16.5.0",
     "postcss": "^8.5.8",
     "tailwindcss": "^4.2.1",
+    "typescript": "5.9.3",
     "vite": "^7.3.1"
   }
 }

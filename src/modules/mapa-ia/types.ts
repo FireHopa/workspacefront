@@ -1,0 +1,19 @@
+export type Source = {url: string; title: string};
+export type Participant = {id: string; name: string; phone: string; email: string; source_row: number};
+export type Company = {id: string; original_name: string; name: string; niche: string; website: string; actual_city: string; aliases: string[]; status: string; notes: string; sources: Source[]; participants: Participant[]; record_type: string; activity: string};
+export type Result = Company & {appearances: number; uncertain: number; validQueries: number; plannedQueries: number; bestPosition: number | null; positions: number[]; competitors: {name: string; count: number}[]};
+export type Task = {id: string; niche: string; iteration: number; status: string; stage: string; error: string; identity_mode?: string; company_name?: string; errorCode?: string; created_at: string; updated_at: string};
+export type Diagnostic = {at: string; stage: string; event: string; retryAt?: string; retryNumber?: number; delaySeconds?: number; model: string; code?: string; message?: string; status?: string; incompleteReason?: string; budget?: number; effort?: string; usage?: unknown; responseId?: string; partialText?: string};
+export type Detail = Task & {diagnostics: Diagnostic[]; extractionModel: string; searchModel: string; prompt: string; model: string; kind: string; raw: {text?: string; sources?: Source[]; annotations?: {start: number; end: number; url: string; title: string}[]; collectedAt?: string}; result: {mentions?: {name: string; position: number | null}[]; niche?: string; city?: string; reason?: string}};
+export type NicheOutcome = "pending" | "accepted" | "unchanged" | "reused" | "inconclusive" | "failed" | "superseded" | "stopped" | "queued" | "running";
+export type NicheResult = {id: string; companyId: string; name: string; previousNiche: string; currentNiche: string; proposedNiche: string; approvedNiche: string; city: string; reason: string; origin: string; outcome: NicheOutcome; suggestionId: string; suggestionStatus: string; hasSources: boolean};
+export type Identification = {counts: Record<NicheOutcome | "changed", number>; rows: NicheResult[]; legacyResults: number};
+export type Job = {id: string; kind: string; status: string; model: string; extraction_model: string; pause_reason: string; waiting?: number; failureSummary: {code: string; label: string; count: number}[]; repetitions: number; query_template: string; created_at: string; total: number; completed: number; failed: number; tasks: Task[]; results?: Result[]; identification?: Identification};
+export type Immersion = {id: string; name: string; city: string; region: string; event_date: string; filename: string; company_count: number; participant_count: number};
+export type Settings = {identificationModel: string; model: string; extractionModel: string; keyConfigured: boolean; keyHint: string; fromEnvironment: boolean};
+export type NicheSuggestion = {id: string; companyId: string; jobId: string; status: string; origin: string; createdAt: string; name: string; niche: string; city: string; currentNiche: string; currentCity: string; canAcceptInBatch: boolean; reason: string; sources: Source[]};
+export type State = {version: string; settings: Settings; immersions: Immersion[]; selectedId: string; companies: Company[]; jobs: Job[]; nicheSuggestions: NicheSuggestion[]};
+export type Sheet = {name: string; rows: number; preview: string[][]; columns: number; hasHeader: boolean; mapping: Record<string, number>};
+export type Staged = {uploadId: string; filename: string; sheets: Sheet[]};
+
+export type Preparation = {reused?: boolean; id: string; status: string; model: string; completedBatches: number; totalBatches: number; error: string; mapping: Record<string, number>; rows: {line: number; person: string; company: string; activity: string; niche: string; needsReview: boolean}[]; diagnostics: unknown[]};

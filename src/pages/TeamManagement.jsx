@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import { api } from '../services/api'
 import { ArrowLeft, ShieldAlert, Users, Plus, CheckCircle2, AlertCircle } from 'lucide-react'
 
-const isStandaloneRole = (role) => ['finance', 'social_publisher', 'social_publisher_admin'].includes(role)
+const isStandaloneRole = (role) => ['finance', 'social_publisher', 'social_publisher_admin', 'mapa_ia'].includes(role)
 
 export default function TeamManagement({ setActiveTab }) {
   const [teamList, setTeamList] = useState([])
@@ -109,6 +109,7 @@ export default function TeamManagement({ setActiveTab }) {
                     <option value="finance">Financeiro (sistema separado)</option>
                     <option value="social_publisher">Social Publisher — Operador</option>
                     <option value="social_publisher_admin">Social Publisher — Administrador</option>
+                    <option value="mapa_ia">Mapa IA · Imersões</option>
                     <option value="admin">Admin</option>
                   </select>
                 </div>
@@ -190,6 +191,7 @@ export default function TeamManagement({ setActiveTab }) {
                         <option value="finance">Financeiro (sistema separado)</option>
                         <option value="social_publisher">Social Publisher — Operador</option>
                         <option value="social_publisher_admin">Social Publisher — Administrador</option>
+                        <option value="mapa_ia">Mapa IA · Imersões</option>
                         <option value="admin">Administrador</option>
                       </select>
                     </td>
