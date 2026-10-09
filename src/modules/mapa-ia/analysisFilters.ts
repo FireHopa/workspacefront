@@ -9,7 +9,7 @@ export function filterResults(results: Result[], filters: ResultFilters, compani
   const people = new Map(companies.map(c => [c.id, c.participants.map(p => p.name)]));
   const query = filterKey(filters.q);
   const selected = results.filter(r => {
-    const text = filterKey([r.name, r.original_name, r.niche, ...(people.get(r.id) || r.participants?.map(p => p.name) || [])].join(" "));
+    const text = filterKey([r.name, r.original_name, r.niche, r.actual_neighborhood || "", r.actual_city || "", ...(people.get(r.id) || r.participants?.map(p => p.name) || [])].join(" "));
     return (!query || text.includes(query)) &&
       (filters.niche === "all" || filterKey(r.niche) === filterKey(filters.niche)) &&
       (filters.presence === "all" || r.status === filters.presence) &&

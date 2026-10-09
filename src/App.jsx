@@ -17,6 +17,7 @@ import Productivity from './pages/Productivity'
 import ConferencePanel from './pages/ConferencePanel'
 
 const MapaIADashboard = lazy(() => import('./modules/mapa-ia/App'))
+const SkybobApp = lazy(() => import('./modules/skybob/App'))
 
 export default function App() {
   const logoutRequested = new URLSearchParams(window.location.search).get('workspace_logout') === '1'
@@ -30,6 +31,7 @@ export default function App() {
   const [token, setToken] = useState(logoutRequested ? null : localStorage.getItem('token'))
   const [user, setUser] = useState(null)
   const [activeTab, setActiveTab] = useState('dashboard')
+  const [workspaceModule, setWorkspaceModule] = useState(() => new URLSearchParams(window.location.search).get('module') === 'skybob' ? 'skybob' : 'mapa')
   const [authError, setAuthError] = useState('')
   const [authAttempt, setAuthAttempt] = useState(0)
 
@@ -67,6 +69,15 @@ export default function App() {
     setActiveTab('dashboard')
   }
 
+  const switchWorkspaceModule = (moduleName) => {
+    const next = moduleName === 'skybob' ? 'skybob' : 'mapa'
+    setWorkspaceModule(next)
+    const url = new URL(window.location.href)
+    if (next === 'skybob') url.searchParams.set('module', 'skybob')
+    else url.searchParams.delete('module')
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+  }
+
   if (!token) {
     return <Login setToken={setToken} />
   }
@@ -75,7 +86,9 @@ export default function App() {
 
   if (user.role === 'finance') return <FinanceDashboard user={user} onLogout={handleLogout} />
   if (['social_publisher', 'social_publisher_admin'].includes(user.role)) return <SocialPublisherRedirect token={token} onLogout={handleLogout} />
-  if (user.role === 'mapa_ia') return <Suspense fallback={<div className="min-h-screen flex items-center justify-center" role="status">Carregando Mapa IA · Imersões…</div>}><MapaIADashboard key={user.id} user={user} onLogout={handleLogout} /></Suspense>
+  if (user.role === 'mapa_ia') return <Suspense fallback={<div className="min-h-screen flex items-center justify-center" role="status">Carregando Workspace…</div>}>{workspaceModule === 'skybob' ? <SkybobApp key={`skybob-${user.id}`} user={user} onLogout={handleLogout} onBack={() => switchWorkspaceModule('mapa')} /> : <MapaIADashboard key={`mapa-${user.id}`} user={user} onLogout={handleLogout} onOpenSkybob={() => switchWorkspaceModule('skybob')} />}</Suspense>
+
+  if (workspaceModule === 'skybob' && user.role === 'admin') return <Suspense fallback={<div className="min-h-screen flex items-center justify-center" role="status">Carregando Skybob…</div>}><SkybobApp key={`skybob-${user.id}`} user={user} onLogout={handleLogout} onBack={() => switchWorkspaceModule('mapa')} /></Suspense>
 
   const canManage = user.role === 'admin'
   const canCreateTask = user.role === 'admin' || user.role === 'employee'
