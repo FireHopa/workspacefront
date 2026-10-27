@@ -29,6 +29,7 @@ export default function App({user, onLogout, onOpenSkybob}: {user: WorkspaceUser
   const [connectionError, setConnectionError] = useState("");
   const [tab, setTab] = useState("import");
   const [busy, setBusy] = useState(false);
+  const [approvingAll, setApprovingAll] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [staged, setStaged] = useState<Staged | null>(null);
   const [edit, setEdit] = useState<Company | null>(null);
@@ -88,6 +89,7 @@ export default function App({user, onLogout, onOpenSkybob}: {user: WorkspaceUser
   }
   const immersion = state.immersions.find(i => i.id === state.selectedId);
   const ready = state.companies.filter(c => c.status === "ready" && c.actual_city.trim() && c.actual_neighborhood.trim());
+  const pendingApprovalCount = state.companies.filter(c => c.status !== "ready" && c.status !== "excluded").length;
   const niches = [...new Map(ready.map(c => [filterKey(c.niche), c.niche])).values()];
   const allNiches = [...new Set(state.companies.map(c => c.niche).filter(Boolean))].sort();
   const active = state.jobs.find(j => ["queued", "running", "paused"].includes(j.status));
@@ -155,6 +157,24 @@ export default function App({user, onLogout, onOpenSkybob}: {user: WorkspaceUser
   }
   function jobAction(job: Job, action: string) {void perform(async () => {await request(`/api/jobs/${job.id}`, {action}); await refresh();});}
 
+  async function approveAllCompanies() {
+    if (busy || approvingAll || active || !state.selectedId || !pendingApprovalCount) return;
+    setApprovingAll(true);
+    setAutoReviewPaused(true);
+    setReviewDeferred(true);
+    setReviewSuggestionId("");
+    try {
+      await perform(async () => {
+        const result = await request<{approved: number; skipped: {id: string; name: string; reason: string}[]}>(`/api/immersions/${state.selectedId}/approve-companies`, {});
+        await refresh();
+        const remaining = result.skipped.length;
+        const description = remaining ? `${remaining} ${remaining === 1 ? "cadastro ainda precisa" : "cadastros ainda precisam"} de revisão de nome, nicho, cidade ou bairro.` : "Todos os cadastros completos desta imersão estão liberados para análise.";
+        if (result.approved) toast.success(`${result.approved} ${result.approved === 1 ? "empresa aprovada" : "empresas aprovadas"} para a análise.`, {description, duration: 8000});
+        else toast.info("Nenhuma nova empresa aprovada.", {description, duration: 8000});
+      });
+    } finally {setApprovingAll(false);}
+  }
+
   // Ferramentas locais opcionais: leitura do mapa e abertura do formulário, sem salvar alterações.
   const currentState = useRef(state); currentState.current = state;
   useEffect(() => {
@@ -187,7 +207,7 @@ export default function App({user, onLogout, onOpenSkybob}: {user: WorkspaceUser
           <div className="metrics"><Metric icon={<Users/>} value={immersion?.participant_count || 0} label="Inscrições preservadas"/><Metric icon={<Building2/>} value={state.companies.length} label="Cadastros de empresas"/><Metric icon={<Check/>} value={ready.length} label="Confirmados para análise" color="green"/><Metric icon={<Globe/>} value={niches.length} label="Nichos confirmados"/></div>
           {active && <JobProgress job={active} busy={busy} action={jobAction} onAudit={() => setAudit({id: active.id, niche: ""})}/>}
           <NicheResults jobs={identifications} job={latestIdentify} busy={busy} active={Boolean(active)} onSelect={setIdentifyHistoryId} onReview={id => setReviewSuggestionId(id)} onBatch={() => {setAutoReviewPaused(true); setBatchJobId(latestIdentify?.id || "");}} onAudit={() => latestIdentify && setAudit({id: latestIdentify.id, niche: ""})} onEdit={id => setEdit(state.companies.find(c => c.id === id) || null)} onRetry={() => latestIdentify && jobAction(latestIdentify, "retry")}/>
-          <section className="panel company-panel"><div className="panel-heading"><div><h2>Empresas, nichos e localização</h2><p>Identifique nicho, bairro e cidade com IA. Cadastros completos são liberados automaticamente; só exceções ficam para revisão.</p></div><div className="review-controls">{suggestions.length > 0 && <Button variant="outline" onClick={() => {setAutoReviewPaused(false); setReviewDeferred(true);}}>Revisar sugestões ({suggestions.length})</Button>}<Button variant="outline" disabled={busy || Boolean(active) || !identifiedCandidates.length} onClick={() => state.settings.keyConfigured ? setNicheRunOpen(true) : setSettingsOpen(true)}><WandSparkles/>Identificar nicho e localização</Button></div></div>
+          <section className="panel company-panel"><div className="panel-heading"><div><h2>Empresas, nichos e localização</h2><p>Aprove de uma vez os cadastros completos de toda a imersão, inclusive fora do filtro. Dados faltantes continuam para revisão.</p></div><div className="review-controls">{suggestions.length > 0 && <Button variant="outline" onClick={() => {setAutoReviewPaused(false); setReviewDeferred(true);}}>Revisar sugestões ({suggestions.length})</Button>}<Button variant="outline" disabled={busy || Boolean(active) || !identifiedCandidates.length} onClick={() => state.settings.keyConfigured ? setNicheRunOpen(true) : setSettingsOpen(true)}><WandSparkles/>Identificar nicho e localização</Button><Button disabled={busy || approvingAll || Boolean(active) || !pendingApprovalCount} title={active ? "Conclua ou encerre a fila atual antes de aprovar todas." : "Aprovar todos os cadastros completos desta imersão, inclusive fora do filtro."} onClick={() => void approveAllCompanies()}>{approvingAll ? <Loader2 className="spin"/> : <Check/>}{approvingAll ? "Aprovando empresas…" : "Aprovar todas"}</Button></div></div>
             <div className="table-toolbar"><div className="search-input"><Search size={17}/><input aria-label="Buscar cadastros" value={filter} onChange={e => setFilter(e.target.value)} placeholder="Buscar empresa, nicho ou participante"/></div><Choice value={statusFilter} onChange={setStatusFilter} label="Filtrar situação" options={[{value: "all", label: "Todas as situações"}, ...["pending", "review", "ready", "excluded"].map(s => ({value: s, label: labels[s]}))]}/><small className="muted">{visible.length} de {state.companies.length} cadastros</small></div>
             <Table className="company-table"><TableHeader><TableRow><TableHead>Participante(s)</TableHead><TableHead>Empresa / profissional</TableHead><TableHead>Nicho da pesquisa</TableHead><TableHead>Bairro / cidade da empresa</TableHead><TableHead>Situação</TableHead><TableHead className="right">Revisão</TableHead></TableRow></TableHeader><TableBody>{visible.map(c => <TableRow key={c.id}><TableCell className="participant-name">{c.participants.slice(0, 2).map(p => <div key={p.id}>{p.name || "Nome não informado"}</div>)}{c.participants.length > 2 && <details><summary>Mais {c.participants.length - 2} participantes</summary>{c.participants.slice(2).map(p => <div key={p.id}>{p.name || "Nome não informado"}</div>)}</details>}</TableCell><TableCell><div className="company-cell"><span className={`company-avatar ${!c.name ? "generic" : ""}`}>{c.name ? c.name.slice(0, 2).toUpperCase() : "?"}</span><div><strong>{c.name || "Empresa não informada"}</strong>{!c.name && <small>Informado: {c.activity || c.original_name}</small>}<small>{c.participants.length} {c.participants.length === 1 ? "inscrição" : "inscrições"}{c.website && <> · <a href={c.website} target="_blank" rel="noreferrer">{host(c.website)}</a></>}</small></div></div></TableCell><TableCell>{c.niche || <span className="missing">Nicho a definir</span>}</TableCell><TableCell>{c.actual_city && c.actual_neighborhood ? <><strong>{c.actual_neighborhood}</strong><small className="cell-subtitle">{c.actual_city}</small></> : <span className="muted">Bairro e cidade a confirmar</span>}</TableCell><TableCell><Badge status={c.status}/></TableCell><TableCell className="right"><Button size="sm" variant="ghost" onClick={() => setEdit(c)}>Revisar<ChevronRight/></Button></TableCell></TableRow>)}</TableBody></Table>
             {!visible.length && <div className="empty-mini">Nenhum cadastro corresponde ao filtro.</div>}
